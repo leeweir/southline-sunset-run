@@ -1,9 +1,25 @@
 {
   "name": "southline-sunset-run",
   "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
   "version": "1.0.0",
   "scripts": {
+    "prestart": "npm run build",
     "start": "python3 -m http.server 4178 --bind 127.0.0.1 --directory dist",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "build": "node scripts/build.mjs",
+    "lint": "eslint src scripts tests eslint.config.js",
+    "format": "prettier --write src scripts tests *.json *.js *.md .github .prettierrc.json",
+    "format:check": "prettier --check src scripts tests *.json *.js *.md .github .prettierrc.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "esbuild": "0.28.2",
+    "eslint": "10.15.0",
+    "globals": "16.5.0",
+    "prettier": "3.9.8"
   }
 }
