@@ -13,6 +13,19 @@
     <link rel="preload" href="assets/sunset-boulevard.webp" as="image" />
     <link rel="stylesheet" href="style.css" />
     <script defer src="game.js"></script>
+    <script>
+      if (location.origin === 'https://leeweir.github.io') {
+        const tracker = document.createElement('script');
+        tracker.async = true;
+        tracker.src = 'https://cloud.umami.is/script.js';
+        tracker.dataset.websiteId = 'b72a1b50-0b5a-4d61-a9f5-d3878d826048';
+        tracker.dataset.domains = 'leeweir.github.io';
+        tracker.dataset.tag = 'southline-sunset-run';
+        tracker.dataset.excludeSearch = 'true';
+        tracker.dataset.excludeHash = 'true';
+        document.head.append(tracker);
+      }
+    </script>
   </head>
   <body>
     <svg class="definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

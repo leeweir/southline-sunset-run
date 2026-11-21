@@ -61,3 +61,7 @@ GitHub Pages 使用 GitHub Actions。向 `main` 推送提交，或在 Actions �
 ```sh
 git worktree add --detach ../southline-baseline playable-baseline-20261121
 ```
+
+## 访问统计
+
+游戏与游戏小屋共用 Umami 站点 `leeweir.github.io`。按标签 `southline-sunset-run` 可以查看本作的浏览量、访客数和访问来源。打开线上游戏页记一次浏览，进入驾驶或打开地图都属于同一次浏览。[南湾夜行统计报表](https://cloud.umami.is/analytics/us/websites/b72a1b50-0b5a-4d61-a9f5-d3878d826048?tag=eq.southline-sunset-run)
