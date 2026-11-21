@@ -38,7 +38,7 @@ npm start
 | `src/render/`                   | 等距投影、街景、车辆、角色、镜头和地图       |
 | `src/ui/`                       | 键盘和触屏输入、HUD、活动和对话框            |
 | `src/main.js`、`src/runtime.js` | 菜单与游戏的切换、Canvas 和固定步长帧循环    |
-| `public/assets/`                | 实机封面、图标、本地字体及字体许可证         |
+| `public/assets/`                | 手绘封面、图标、本地字体及字体许可证         |
 | `scripts/build.mjs`、`tests/`   | 离线包构建及可重复的模拟测试                 |
 | `dist/`                         | 构建生成的可玩副本                           |
 

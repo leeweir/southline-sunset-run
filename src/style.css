@@ -232,7 +232,6 @@ button:active:not(:disabled) {
   margin-left: 12px;
   color: #d1b8ab;
 }
-.cover-art,
 #canvas-host canvas {
   filter: saturate(1.15) contrast(1.06);
 }
@@ -243,7 +242,7 @@ button:active:not(:disabled) {
   z-index: -1;
 }
 .cover-art {
-  background: #634d5b url('assets/vinyl-at-dusk.webp') center 46% / cover no-repeat;
+  background: #634d5b url('assets/sunset-boulevard.webp') center 46% / cover no-repeat;
 }
 .cover-tint {
   background:
@@ -1786,17 +1785,6 @@ noscript {
     width: 23px;
   }
 }
-@media (max-width: 620px) and (min-height: 431px) {
-  .cover {
-    background: #29222e;
-  }
-  .cover-art {
-    height: clamp(34%, calc(100% - 220px), 74%);
-    background-position: 77% 36%;
-    mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
