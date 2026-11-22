@@ -34,6 +34,10 @@ function approachCruiser(sim, staffed) {
   sim.interact();
   for (let i = 0; i < 90 && (!sim.nearbyVehicles.includes(car) || (!staffed && !car.officer)); i++) {
     tick(sim, 1);
+    // Faster cruisers can roll to a stop beyond arm's reach; walk up to the parked car's door.
+    if (!staffed && car.officer && !sim.nearbyVehicles.includes(car))
+      sim.foot = world.vehicleExit(car, sim.foot);
+  }
   assert.equal(car.occupied, staffed);
   selectCar(sim, car);
   return car;
