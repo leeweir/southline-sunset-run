@@ -136,7 +136,7 @@ class CityView {
     this.nextRoute = -1;
     this.targetId = null;
   }
-  draw(ctx, w, h, dt, input) {
+  draw(ctx, w, h, dt) {
     const sim = this.sim,
       p = sim.player,
       flight = sim.flight,
@@ -336,7 +336,7 @@ class CityView {
           oval(ctx, q.x, q.y + 2, 19, 7, blue ? 'rgba(105,166,249,.25)' : 'rgba(248,115,109,.24)');
         const canEnterFreely = model.claimed && !model.onDuty;
         if (model === nearby) mark(ctx, model, sim.time, canEnterFreely ? '#99ecd4' : '#ffb67d', false);
-        carArt(ctx, model, o.player, o.player && (input.hand || input.down), blue);
+        carArt(ctx, model, o.player, o.player && sim.braking, blue);
         if (model.fugitive) drawPersonPin(ctx, model, false);
         if (model.onDuty && !model.patrol) officerMark(ctx, q.x, q.y - 26, 3.6);
         if (!sim.car && (!model.occupied || distance(model, p) < 120)) {

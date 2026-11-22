@@ -174,7 +174,7 @@ class Flight {
     const hostile = this.sim.wanted.helicopter;
     if (hostile?.lowPass && !this.sim.car)
       return [
-        '五星空巡',
+        '警方空巡',
         this.boardable ? '悬梯已到身边' : '直升机正在低飞',
         this.boardable ? '按 F 或点「夺取直升机」' : '靠近悬梯的橙色标记',
       ];
@@ -313,12 +313,12 @@ class Flight {
       }
       return;
     }
-    const dx = Number(!!input.right) - Number(!!input.left),
-      dy = Number(!!input.down) - Number(!!input.up);
-    const n = Math.hypot(dx, dy) || 1,
-      speed = input.hand ? 0 : 180;
-    h.vx = approach(h.vx, ((0.85 * dx - 0.53 * dy) / n) * speed, (dx || dy ? 230 : 340) * dt);
-    h.vy = approach(h.vy, ((0.53 * dx + 0.85 * dy) / n) * speed, (dx || dy ? 230 : 340) * dt);
+    const push = world.screenPush(input),
+      throttle = Math.min(1, Math.hypot(push.x, push.y)),
+      dir = world.screenDirection(push.x, push.y),
+      speed = input.hand ? 0 : 180 * throttle;
+    h.vx = approach(h.vx, dir.x * speed, (throttle ? 230 : 340) * dt);
+    h.vy = approach(h.vy, dir.y * speed, (throttle ? 230 : 340) * dt);
     h.x = clamp(h.x + h.vx * dt, -45, world.width + 70);
     h.y = clamp(h.y + h.vy * dt, -45, world.height + 65);
     if (Math.hypot(h.vx, h.vy) > 4) h.a = Math.atan2(h.vy, h.vx);

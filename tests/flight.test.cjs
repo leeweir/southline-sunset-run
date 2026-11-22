@@ -222,7 +222,7 @@ test('losing five stars in flight completes the challenge once and keeps the cap
   until(
     sim,
     () => !sim.wanted.stars,
-    700,
+    1600,
     () => ({ up: true }),
   );
   assert.equal(sim.player, h);

@@ -1,9 +1,6 @@
 import { world, random } from '../game/world.js';
 
-const screenXFromX = 0.848,
-  screenXFromY = 0.53,
-  screenYFromX = -0.336,
-  screenYFromY = 0.538,
+const { screenXFromX, screenXFromY, screenYFromX, screenYFromY } = world.ground,
   heightScale = 0.88;
 const project = (x, y, z = 0) => ({
   x: screenXFromX * x + screenXFromY * y,

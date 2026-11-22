@@ -8,6 +8,23 @@ const width = step * cols,
   height = step * rows;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Ground-plane isometric projection, shared by the renderer and the screen-relative controls.
+const ground = { screenXFromX: 0.848, screenXFromY: 0.53, screenYFromX: -0.336, screenYFromY: 0.538 };
+function screenDirection(sx, sy) {
+  // Invert the projection so a push toward a screen direction moves the same way on the ground.
+  const x = ground.screenYFromY * sx - ground.screenXFromY * sy,
+    y = -ground.screenYFromX * sx + ground.screenXFromX * sy,
+    n = Math.hypot(x, y);
+  return n ? { x: x / n, y: y / n } : { x: 0, y: 0 };
+}
+// The touch stick's analog push, or the arrow keys, in screen space (+y points down).
+function screenPush(input) {
+  if (input.stickX || input.stickY) return { x: input.stickX, y: input.stickY };
+  return {
+    x: Number(!!input.right) - Number(!!input.left),
+    y: Number(!!input.down) - Number(!!input.up),
+  };
+}
 function random(seed) {
   let state = seed >>> 0;
   return () => {
@@ -349,6 +366,7 @@ const world = {
   cars,
   patrolCar: { name: '南湾巡逻车', color: '#e5decf', max: 180, patrol: true },
   spawn,
+  ground,
   allowed,
   clearSegment,
   walkRoute,
@@ -356,6 +374,8 @@ const world = {
   district,
   route,
   roadPoint,
+  screenDirection,
+  screenPush,
 };
 
 export { world, clamp, distance, random };

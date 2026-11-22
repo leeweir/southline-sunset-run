@@ -14,6 +14,10 @@ function updateWanted(sim) {
   Array.from(stars.children).forEach((star, i) => star.classList.toggle('lit', i < wanted.stars));
   $('#wanted-readout').hidden = !active;
   $('#wanted-meter').hidden = !(intercept || searching);
+  // Heat toward the next star: time in view plus crimes the police witness.
+  const heat = $('#wanted-heat');
+  heat.hidden = !active || wanted.stars >= 5;
+  heat.firstElementChild.style.transform = 'scaleX(' + wanted.heatFraction + ')';
   if (!active) return;
   const walkers = wanted.units.filter((u) => u.officer);
   const cars = wanted.units.length - walkers.length;
@@ -119,8 +123,7 @@ export function renderHUD(sim, input) {
           : '0';
   $('#altitude').hidden = !flight.height;
   $('#altitude').textContent = flight.height ? '高度 ' + Math.round(flight.height * 0.62) + ' 米' : '';
-  $('[data-key="up"]').setAttribute('aria-label', pilot ? '向上飞行' : '油门或向上');
-  $('[data-key="down"]').setAttribute('aria-label', pilot ? '向下飞行' : '刹车或向下');
+  $('[data-key="hand"]').hidden = !car;
   $('[data-do="sprint"]').hidden = !!(car || pilot);
 
   const choices = sim.nearbyVehicles;

@@ -89,7 +89,6 @@
         <path d="m7 12 3-4 4 1 2 3 3 1m-6-5-2 7-4 6m4-7 4 3 2 4" />
       </symbol>
       <symbol id="i-direction" viewBox="0 0 24 24"><path d="m3.3 10 17.4-6.7L14 20.7l-3.1-7.6z" /></symbol>
-      <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 15 7-7 7 7" stroke-width="2.7" /></symbol>
       <symbol id="i-star" viewBox="0 0 24 24">
         <path d="m12 2.5 2.9 6 6.6 1-4.8 4.6 1.2 6.6-5.9-3.1-5.9 3.1 1.2-6.6-4.8-4.6 6.6-1Z" />
       </symbol>
@@ -177,6 +176,15 @@
     <section id="play" aria-label="南湾市游戏场景" hidden>
       <div id="canvas-host" aria-label="2.5D 南湾市街区"></div>
       <div class="hud">
+        <div class="touch-controls">
+          <div class="stick-zone" id="stick-zone" aria-hidden="true">
+            <div class="stick" id="stick"><i id="stick-knob"></i></div>
+          </div>
+          <div class="touch-buttons">
+            <button class="sprint" data-do="sprint" aria-pressed="false" hidden>疾跑</button>
+            <button class="handbrake" data-key="hand" aria-label="手刹，按住漂移过弯" hidden>手刹</button>
+          </div>
+        </div>
         <button class="objective" data-do="objective" aria-label="查看当前行程">
           <span class="objective-icon"
             ><svg class="icon"><use href="#i-flag" /></svg
@@ -197,6 +205,7 @@
               ><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>
             </span>
           </div>
+          <div id="wanted-heat" class="wanted-heat" title="升星进度" hidden><i></i></div>
           <div id="wanted-readout" class="wanted-readout" hidden>
             <i></i><span id="wanted-state" role="status"></span><b id="wanted-clock"></b>
           </div>
@@ -237,23 +246,6 @@
               ><span id="interact-label">下车</span>
             </button>
             <button class="vehicle-cycle" data-do="cycle-vehicle" hidden><kbd>Q</kbd>切换目标</button>
-          </div>
-        </div>
-        <div class="touch-controls" aria-label="触屏操作">
-          <div class="steer">
-            <button data-key="left" aria-label="左">
-              <svg class="icon left"><use href="#i-up" /></svg></button
-            ><button data-key="right" aria-label="右">
-              <svg class="icon right"><use href="#i-up" /></svg>
-            </button>
-          </div>
-          <button class="sprint" data-do="sprint" aria-pressed="false" hidden>疾跑</button>
-          <div class="pedals">
-            <button class="brake" data-key="down" aria-label="刹车或向下">
-              <svg class="icon down"><use href="#i-up" /></svg></button
-            ><button class="gas" data-key="up" aria-label="油门或向上">
-              <svg class="icon"><use href="#i-up" /></svg>
-            </button>
           </div>
         </div>
       </div>

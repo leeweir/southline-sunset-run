@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { city, tick } = require('./simulation.cjs');
+const { world } = require('../src/game/world.js');
 function takeCurbsideCab(sim) {
   sim.interact();
   tick(sim, 30, { right: true });
@@ -31,11 +32,20 @@ function approachCruiser(sim, staffed) {
   const car = sim.wanted.cruisers[0];
   for (let i = 0; i < 360 && sim.wanted.nearest > (staffed ? 35 : 24); i++) tick(sim, 1);
   sim.interact();
-  for (let i = 0; i < 90 && (!sim.nearbyVehicles.includes(car) || (!staffed && !car.officer)); i++)
+  for (let i = 0; i < 90 && (!sim.nearbyVehicles.includes(car) || (!staffed && !car.officer)); i++) {
     tick(sim, 1);
   assert.equal(car.occupied, staffed);
   selectCar(sim, car);
   return car;
+}
+// Lose the pursuit out of sight: every unit is across town and the search clock has nearly run out.
+function goCold(sim) {
+  const w = sim.wanted;
+  Object.assign(w, { phase: 'search', remaining: 0.5, lastSeen: { x: 1200, y: 1000 } });
+  for (const u of w.units) {
+    if (u.onDuty) Object.assign(u, { x: 1200, y: 1000, speed: 0 });
+    if (u.officer) Object.assign(u.officer, { x: 1200, y: 1000 });
+  }
 }
 
 test('legacy saves keep the vehicle, wallet and active delivery', () => {
@@ -85,7 +95,8 @@ test('driving away starts a real search, preserves it across reload and clears t
   run.sim.begin('free');
   takeCurbsideCab(run.sim);
   const start = run.sim.wanted.units[0].x;
-  tick(run.sim, 320, { up: true });
+  // Turning off the avenue breaks the patrol's line of sight once the radio trail goes cold.
+  for (let f = 0; f < 320; f++) tick(run.sim, 1, { up: true, left: f >= 100 && f < 145 });
   const wanted = run.sim.wanted;
   assert.ok(wanted.units[0].x > start + 100);
   assert.equal(wanted.phase, 'search');
@@ -95,7 +106,8 @@ test('driving away starts a real search, preserves it across reload and clears t
   assert.equal(resumed.sim.carId, run.sim.carId);
   assert.deepEqual(JSON.parse(JSON.stringify(resumed.sim.wanted.snapshot())), run.saved().wanted);
   resumed.sim.begin('free');
-  tick(resumed.sim, 480, { hand: true });
+  for (let f = 0; f < 900 && resumed.sim.wanted.stars; f++)
+    tick(resumed.sim, 1, { up: true, left: f > 20 && f < 65 });
   assert.equal(resumed.sim.wanted.stars, 0);
   assert.equal(resumed.sim.wanted.units.length, 0);
   assert.equal(resumed.saved().wanted, null);
@@ -112,10 +124,18 @@ test('a building blocks detection and reacquisition resets the escape countdown'
   const w = sim.wanted;
   w.report(left);
   Object.assign(w.units[0], left);
-  for (let i = 0; i < 65; i++) w.step(1 / 60, right, true);
+  let frames = 0;
+  while (w.phase === 'chase' && frames < 200) {
+    w.step(1 / 60, right, true);
+    frames++;
+  }
   assert.equal(w.phase, 'search');
+  // Radio calls keep a car on the trail for a moment, then the last sighting freezes.
+  assert.ok(frames >= Math.floor(w.trackDuration * 60));
+  assert.equal(w.lastSeen.x, right.x);
+  w.step(1 / 60, { ...left, y: left.y + 400 }, true);
   assert.ok(w.remaining < w.searchDuration);
-  assert.equal(w.lastSeen.x, left.x);
+  assert.equal(w.lastSeen.x, right.x);
   assert.equal(w.step(1 / 60, left, true), 'spotted');
   assert.equal(w.phase, 'chase');
   assert.equal(w.remaining, w.searchDuration);
@@ -201,7 +221,8 @@ test('bail at speed, outrun the officer, take passing traffic and see the same c
   sim.interact();
   assert.equal(sim.car.id, 'street-3');
   assert.equal(sim.wanted.stars, 1);
-  assert.equal(sim.wanted.continuous, chaseTime);
+  // Carjacking in front of a pursuing officer adds heat toward the next star.
+  assert.equal(sim.wanted.continuous, chaseTime + 8);
   assert.equal(sim.wanted.units[0].officer, officer);
   const beforeReturn = Math.hypot(officer.x - patrol.x, officer.y - patrol.y);
   tick(sim, 12, { up: true });
@@ -251,8 +272,9 @@ test('a runner can finish the escape countdown on foot without entering another 
   for (let frame = 0; frame < 90 && !sim.wanted.units[0].officer; frame++) tick(sim, 1);
   assert.ok(sim.wanted.units[0].officer);
   let searched = false;
-  for (let frame = 0; frame < 1600 && sim.wanted.stars; frame++) {
-    tick(sim, 1, { up: true, hand: true });
+  for (let frame = 0; frame < 2400 && sim.wanted.stars; frame++) {
+    // Run up the avenue, then cut left around the block.
+    tick(sim, 1, frame < 240 ? { up: true, hand: true } : { left: true, hand: true });
     if (sim.wanted.phase === 'search' && sim.wanted.remaining < 5) searched = true;
     assert.equal(sim.carId, null);
   }
@@ -288,7 +310,7 @@ test('a parked cruiser cannot see or catch players while its officer runs around
     event = w.step(1 / 60, right, false, true);
     assert.ok(world.allowed(officer.x, officer.y, 3));
     assert.ok(world.clearSegment(previous, officer, 2.95));
-    if (frame === 65) {
+    if (frame === Math.ceil(w.trackDuration * 60) + 1) {
       assert.equal(w.phase, 'search');
       assert.equal(w.intercept, 0);
     }
@@ -349,17 +371,18 @@ test('taking a staffed moving cruiser transfers the physical car, and escaping k
   sim.interact();
   assert.equal(sim.car, cruiser);
   assert.deepEqual({ x: cruiser.x, y: cruiser.y, a: cruiser.a, speed: cruiser.speed }, { x, y, a, speed });
-  assert.equal(sim.vehicles.length, count);
-  assert.equal(new Set(sim.vehicles).size, count);
-  assert.equal(sim.wanted.cruisers.length, 0);
+  // Taking a cruiser in front of its crew costs a star, and dispatch sends one more unit.
+  assert.equal(sim.vehicles.length, count + 1);
+  assert.equal(new Set(sim.vehicles).size, count + 1);
+  assert.equal(sim.wanted.cruisers.length, 1);
   assert.equal(sim.drivers.length, drivers);
-  assert.equal(sim.wanted.stars, 1);
-  assert.equal(sim.wanted.continuous, heat);
+  assert.equal(sim.wanted.stars, 2);
+  assert.ok(heat > 0 && sim.wanted.continuous === 0);
   const officer = sim.wanted.units[0].officer;
   assert.ok(Math.hypot(officer.x - x, officer.y - y) < 24);
   assert.equal(officer.door, null);
-  tick(sim, 36, { up: true, left: true });
-  for (let i = 0; i < 900 && sim.wanted.stars; i++) tick(sim, 1, { up: true });
+  goCold(sim);
+  for (let i = 0; i < 120 && sim.wanted.stars; i++) tick(sim, 1);
   assert.equal(sim.car, cruiser);
   assert.ok(events.some((e) => e.type === 'escaped'));
   sim.save();
@@ -389,12 +412,13 @@ test('taking a vacant patrol car preserves the foot officer, other patrols and u
   assert.equal(run.sim.car, cruiser);
   assert.equal(run.sim.wanted.units[0].officer, officer);
   assert.deepEqual({ x: officer.x, y: officer.y }, start);
+  // The officer watched the theft, so a second unit is already on its way.
+  assert.equal(run.sim.wanted.stars, 2);
   const resumed = city(run.saved()),
     sim = resumed.sim;
   assert.equal(sim.carId, cruiser.id);
   assert.deepEqual(JSON.parse(JSON.stringify(sim.wanted.snapshot())), run.saved().wanted);
   assert.equal(sim.wanted.units[0].officer.returning, false);
-  sim.wanted.continuous = 35;
   tick(sim, 2, { up: true });
   assert.equal(sim.wanted.stars, 2);
   const second = sim.wanted.cruisers[0];
@@ -404,17 +428,22 @@ test('taking a vacant patrol car preserves the foot officer, other patrols and u
   sim.interact();
   sim.foot = resumed.world.vehicleExit(second);
   selectCar(sim, second);
+  const witnessed = sim.wanted.inSight;
   sim.interact();
   assert.equal(sim.car, second);
   assert.notEqual(second.id, cruiser.id);
-  assert.equal(sim.wanted.stars, 2);
-  assert.equal(sim.wanted.cruisers.length, 0);
+  assert.equal(sim.wanted.stars, 2 + Number(witnessed));
+  // Each witnessed cruiser theft calls in one more unit.
+  assert.equal(sim.wanted.cruisers.length, Number(witnessed));
   const reloaded = city(resumed.saved()).sim;
   assert.equal(reloaded.carId, second.id);
-  assert.equal(reloaded.vehicles.filter((c) => c.patrol).length, 2);
-  assert.ok(reloaded.wanted.units.every((u) => u.officer && !u.officer.returning && !u.officer.door));
+  assert.equal(reloaded.vehicles.filter((c) => c.patrol).length, 2 + Number(witnessed));
+  // Both robbed crews are still on foot, with no car to return to.
+  assert.ok(
+    reloaded.wanted.units.slice(0, 2).every((u) => u.officer && !u.officer.returning && !u.officer.door),
+  );
   tick(reloaded, 30);
-  assert.equal(reloaded.wanted.cruisers.length, 1);
+  assert.equal(reloaded.wanted.cruisers.length, 1 + Number(witnessed));
   assert.equal(reloaded.wanted.cruisers[0].id, cruiser.id);
   assert.equal(reloaded.carId, second.id);
 });
@@ -529,9 +558,9 @@ test('after losing the cruiser the same unit reaches the abandoned cab, takes th
   tick(sim, 60, { up: true });
   assert.ok(Math.hypot(cab.x - start.x, cab.y - start.y) > 25);
   assert.equal(sim.car, stolen);
-  assert.equal(sim.wanted.stars, 1);
-  assert.equal(sim.vehicles.length, total);
-  assert.equal(new Set(sim.vehicles).size, total);
+  assert.equal(sim.wanted.stars, 2);
+  assert.equal(sim.vehicles.length, total + 1);
+  assert.equal(new Set(sim.vehicles).size, total + 1);
   assert.equal(events.filter((e) => e.message?.includes?.('已征用')).length, 1);
 });
 
@@ -594,8 +623,9 @@ test('a requisitioned car can be surrendered again without changing its ID, rout
   assert.equal(car.path, route);
   assert.equal(sim.wanted.units[0].officer, officer);
   assert.equal(sim.drivers.length, 1);
-  assert.equal(sim.vehicles.length, count);
-  assert.equal(sim.wanted.stars, 1);
+  // Retaking the car under the officer's eyes raises the wanted level and calls in another unit.
+  assert.equal(sim.vehicles.length, count + 1);
+  assert.equal(sim.wanted.stars, 2);
   assert.equal(car.onDuty, false);
 });
 

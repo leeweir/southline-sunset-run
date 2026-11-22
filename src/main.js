@@ -65,6 +65,8 @@ function activityError(message) {
 function onEvent(type, message) {
   if (type === 'bump') {
     radio.fx('bump');
+    // A short buzz on phones that support it; ignored elsewhere.
+    if (playing) navigator.vibrate?.(28);
     return;
   }
   if (type === 'garage') openModal('garage');
@@ -152,7 +154,7 @@ async function start(mode) {
           : mode === 'free'
             ? '自由漫游 · 徒步靠近任意车辆即可上车'
             : coarse
-              ? '右下方踩油门，左下方转向'
+              ? '左半屏按住拖动摇杆，推向哪就往哪开'
               : 'W 加速 · A / D 转向 · S 刹车',
     );
   } catch (error) {

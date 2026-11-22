@@ -1,6 +1,6 @@
 import { world, clamp, distance, random } from './world.js';
 import { Flight, helipads } from './flight.js';
-import { Pursuit } from './pursuit.js';
+import { Pursuit, AIR_STARS } from './pursuit.js';
 import { CityActivities, paints } from './activities.js';
 
 const key = 'southline.drive.v1';
@@ -86,6 +86,8 @@ class Drive {
     this.cooldown = 0;
     this.saveClock = 0;
     this.walking = false;
+    this.braking = false;
+    this.reversing = false;
     this.wanted = new Pursuit(this.cars, (car) => this.addDriver(car));
     this.drivers = [];
     this.trails = [];
@@ -358,7 +360,8 @@ class Drive {
       return;
     }
     const intercepted = this.city.beforeTake(found);
-    const theft = !intercepted && (!found.claimed || found.onDuty);
+    const theft = !intercepted && (!found.claimed || found.onDuty),
+      police = theft && (found.patrol || found.onDuty);
     const surrendered = this.wanted.surrenderCar(found, this.foot);
     if (surrendered && !found.id) {
       let number = 1;
@@ -374,13 +377,17 @@ class Drive {
     this.selectedVehicle = null;
     this.walking = false;
     if (theft) {
+      // Taking a police vehicle in view costs a star; a carjacking in view adds heat.
+      const raised = wanted && this.wanted.witness(police ? this.wanted.escalation : 8, found);
       if (!wanted) this.wanted.report(found);
-      this.emit(
-        'alert',
-        '抢到' + found.name + ' · ' + this.wanted.stars + ' 星通缉' + (wanted ? '继续' : ''),
-      );
+      this.starAlert('抢到' + found.name, wanted && !raised ? '继续' : '');
     } else this.emit('notice', '已上车 · ' + found.name);
     this.save();
+  }
+  starAlert(prefix, suffix = '') {
+    const stars = this.wanted.stars,
+      air = stars === AIR_STARS && !this.wanted.aircraftTaken;
+    this.emit('alert', prefix + ' · ' + stars + ' 星通缉' + suffix + (air ? ' · 直升机出动' : ''));
   }
   addDriver(c) {
     for (const side of [1, -1]) {
@@ -473,6 +480,10 @@ class Drive {
       this.flight.height,
     );
     if (!event) return;
+    if (event === 'rammed') {
+      this.emit('bump');
+      return event;
+    }
     // The challenge settles the escape and its payout together in this simulation step.
     if (event === 'escaped' && this.city.active?.kind === 'heat') return event;
     if (event === 'caught') {
@@ -488,7 +499,7 @@ class Drive {
       this.emit('caught', car ? '被警方截停' : '被警员抓获');
     } else if (event === 'escaped') this.emit('escaped', '已甩开追兵 · 通缉解除');
     else if (event === 'commandeered') this.emit('alert', '警员已征用附近车辆，继续追击');
-    else if (event === 'reinforced') this.emit('alert', '增援抵达 · ' + this.wanted.stars + ' 星通缉');
+    else if (event === 'reinforced') this.starAlert('增援抵达');
     else if (event === 'spotted') this.emit('alert', '再次被发现 · 警方恢复追击');
     this.save();
     return event;
@@ -532,34 +543,75 @@ class Drive {
     }
     while (this.trails.length && this.time - this.trails[0].t > 2.5) this.trails.shift();
   }
+  // Screen-relative stick: the car steers toward the push and eases off for sharp corners.
+  stickPedals(c, push) {
+    const m = Math.min(1, Math.hypot(push.x, push.y)),
+      w = world.screenDirection(push.x, push.y),
+      diff = wrap(Math.atan2(w.y, w.x) - c.a),
+      off = Math.abs(diff);
+    // Pulling back from a standstill reverses until the stick swings round past the side.
+    this.reversing = this.reversing ? off > 1.75 : off > 2.36 && c.speed < 8;
+    if (this.reversing)
+      return { gas: 0, brake: m, steer: clamp(-wrap(diff - Math.PI) / 0.4, -1, 1), slide: false };
+    if (off > 2 && c.speed > 8) return { gas: 0, brake: 1, steer: Math.sign(diff), slide: c.speed > 70 };
+    return {
+      gas: m * clamp(1.25 - off * 0.7, 0.35, 1),
+      brake: 0,
+      steer: clamp(diff / 0.35, -1, 1),
+      slide: off > 0.7 && c.speed > 75,
+    };
+  }
   drive(dt, input) {
     const c = this.car,
-      gas = input.up ? 1 : 0,
-      brake = input.down ? 1 : 0,
-      steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+      push = world.screenPush(input);
+    let pedals;
+    if (input.stickX || input.stickY) pedals = this.stickPedals(c, push);
+    else {
+      this.reversing = false;
+      pedals = { gas: input.up ? 1 : 0, brake: input.down ? 1 : 0, steer: push.x, slide: false };
+    }
+    const { gas, brake, steer } = pedals,
+      hand = input.hand || pedals.slide;
     const near = world.roadPoint(c).at,
       offRoad = distance(near, c) > world.road / 2 + 7;
     const top = offRoad ? c.max * 0.56 : c.max;
-    if (gas && !brake) c.speed = driftToward(c.speed, top, (c.speed < 0 ? 140 : 66) * dt);
+    if (gas && !brake) c.speed = driftToward(c.speed, top * gas, (c.speed < 0 ? 140 : 66) * dt);
     else if (brake && !gas) c.speed = driftToward(c.speed, -42, (c.speed > 0 ? 166 : 49) * dt);
     else c.speed = driftToward(c.speed, 0, (offRoad ? 39 : 25) * dt);
-    if (input.hand) c.speed = driftToward(c.speed, 0, 112 * dt);
-    const turn =
-      Math.min(1, Math.abs(c.speed) / 21) * Math.sign(c.speed) * steer * (input.hand ? 3.05 : 1.94);
+    if (hand) c.speed = driftToward(c.speed, 0, 112 * dt);
+    this.braking = !!(brake || hand);
+    const turn = Math.min(1, Math.abs(c.speed) / 21) * Math.sign(c.speed) * steer * (hand ? 3.05 : 1.94);
     const a = wrap(c.a + turn * dt),
       x = c.x + Math.cos(a) * c.speed * dt,
       y = c.y + Math.sin(a) * c.speed * dt;
-    const nose = 12 * Math.sign(c.speed),
-      forwardX = x + Math.cos(a) * nose,
-      forwardY = y + Math.sin(a) * nose,
-      can =
-        world.allowed(x, y, 7) &&
-        world.allowed(forwardX, forwardY, 5) &&
-        !this.wanted.blocksCar(forwardX, forwardY);
-    if (can) {
+    const nose = 12 * Math.sign(c.speed);
+    const clear = (px, py, heading) => {
+      const fx = px + Math.cos(heading) * nose,
+        fy = py + Math.sin(heading) * nose;
+      return world.allowed(px, py, 7) && world.allowed(fx, fy, 5) && !this.wanted.blocksCar(fx, fy);
+    };
+    // A glancing hit scrapes along the axis-aligned wall; only a square hit bounces back.
+    const ux = Math.cos(a),
+      uy = Math.sin(a),
+      keep = Math.max(Math.abs(ux), Math.abs(uy)),
+      along = Math.abs(ux) > Math.abs(uy) ? (ux > 0 ? 0 : Math.PI) : uy > 0 ? Math.PI / 2 : -Math.PI / 2,
+      scrape = c.speed * keep * 0.9;
+    if (clear(x, y, a)) {
       c.x = x;
       c.y = y;
       c.a = a;
+    } else if (
+      keep > 0.8 &&
+      clear(c.x + Math.cos(along) * scrape * dt, c.y + Math.sin(along) * scrape * dt, along)
+    ) {
+      if (Math.abs(c.speed - scrape) > 30 && this.cooldown === 0) {
+        this.emit('bump');
+        this.cooldown = 0.7;
+      }
+      c.speed = scrape;
+      c.a = along;
+      c.x += Math.cos(along) * scrape * dt;
+      c.y += Math.sin(along) * scrape * dt;
     } else {
       c.a = a;
       if (Math.abs(c.speed) > 35 && this.cooldown === 0) {
@@ -583,32 +635,30 @@ class Drive {
         c.speed *= -0.28;
         this.cooldown = 1;
         this.emit('bump');
+        if (struckPolice && this.wanted.witness(6, c)) this.starAlert('撞击警车');
         break;
       }
     this.trailClock += dt;
-    if (input.hand && Math.abs(c.speed) > 32 && this.trailClock > 0.055) {
+    if (hand && Math.abs(c.speed) > 32 && this.trailClock > 0.055) {
       this.trailClock = 0;
       this.trails.push({ x: c.x, y: c.y, a: c.a, t: this.time });
     }
   }
   walk(dt, input) {
-    const dx = Number(!!input.right) - Number(!!input.left),
-      dy = Number(!!input.down) - Number(!!input.up);
-    this.walking = !!(dx || dy);
+    const push = world.screenPush(input),
+      effort = Math.min(1, Math.hypot(push.x, push.y));
+    this.walking = effort > 0;
     if (!this.walking) return;
-    // Invert the camera's horizontal rotation so the arrow keys match the screen.
-    const wx = 0.85 * dx - 0.53 * dy,
-      wy = 0.53 * dx + 0.85 * dy,
-      n = Math.hypot(wx, wy);
-    const v = ((input.hand ? 68 : 46) * dt) / n,
+    const w = world.screenDirection(push.x, push.y),
+      v = (input.hand ? 68 : 46) * Math.max(0.35, effort) * dt,
       p = this.foot;
     if (this.flight.roof) {
-      this.flight.moveOnRoof(p.x + wx * v, p.y + wy * v, Math.atan2(wy, wx));
+      this.flight.moveOnRoof(p.x + w.x * v, p.y + w.y * v, Math.atan2(w.y, w.x));
       return;
     }
-    if (world.allowed(p.x + wx * v, p.y, 3)) p.x += wx * v;
-    if (world.allowed(p.x, p.y + wy * v, 3)) p.y += wy * v;
-    p.a = Math.atan2(wy, wx);
+    if (world.allowed(p.x + w.x * v, p.y, 3)) p.x += w.x * v;
+    if (world.allowed(p.x, p.y + w.y * v, 3)) p.y += w.y * v;
+    p.a = Math.atan2(w.y, w.x);
   }
   advanceJob(dt) {
     const t = this.target;

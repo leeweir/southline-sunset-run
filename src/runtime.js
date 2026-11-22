@@ -45,13 +45,7 @@ export class StreetRuntime {
   }
   draw(delta) {
     this.context.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
-    this.view.draw(
-      this.context,
-      this.canvas.width / this.ratio,
-      this.canvas.height / this.ratio,
-      delta,
-      this.input,
-    );
+    this.view.draw(this.context, this.canvas.width / this.ratio, this.canvas.height / this.ratio, delta);
   }
   frame(timestamp) {
     if (!this.running) return;

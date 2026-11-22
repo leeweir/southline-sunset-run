@@ -2,10 +2,23 @@ import { world, clamp, distance } from './world.js';
 import { skySight } from './flight.js';
 
 const MAX_STARS = 5;
+// Four stars adds the searchlight helicopter that a runner on foot can hijack.
+const AIR_STARS = 4;
 const ARREST_SECONDS = 3;
 const PICKUP_RANGE = 165;
 const BOARD_SECONDS = 0.45;
 const position = ({ x, y }) => ({ x, y });
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// A spot is out of frame when its projected offset from the suspect exceeds a large landscape screen.
+const offscreen = (p, from) => {
+  const dx = p.x - from.x,
+    dy = p.y - from.y,
+    g = world.ground;
+  return (
+    Math.abs(g.screenXFromX * dx + g.screenXFromY * dy) > 500 ||
+    Math.abs(g.screenYFromX * dx + g.screenYFromY * dy) > 290
+  );
+};
 const bounded = (value, max) => (Number.isFinite(value) ? clamp(value, 0, max) : 0);
 const validPoint = (p, margin) =>
   p && Number.isFinite(p.x) && Number.isFinite(p.y) && world.allowed(p.x, p.y, margin);
@@ -132,7 +145,7 @@ function moveUnit(unit, target, dt, topSpeed, standOff) {
     turn = Math.atan2(Math.sin(heading - unit.a), Math.cos(heading - unit.a));
   unit.a += clamp(turn, -3.8 * dt, 3.8 * dt);
   const speed = Math.min(
-    Math.abs(turn) > 0.52 ? 45 : topSpeed,
+    Math.abs(turn) > 0.52 ? 55 : topSpeed,
     12 + Math.max(0, distance(unit, target) - standOff) * 2.8,
   );
   unit.speed += clamp(speed - unit.speed, -145 * dt, 81 * dt);
@@ -212,6 +225,7 @@ class Pursuit {
     this.remaining = 0;
     this.unseen = 0;
     this.continuous = 0;
+    this.inSight = false;
     this.intercept = 0;
     this.nearest = Infinity;
     this.roadblock = null;
@@ -219,7 +233,18 @@ class Pursuit {
     this.aircraftTaken = false;
   }
   get searchDuration() {
-    return 5 + this.stars;
+    return 8 + this.stars * 3;
+  }
+  // After losing sight, radio calls keep the units on the suspect's trail this long before the search.
+  get trackDuration() {
+    return 0.9 + this.stars * 0.25;
+  }
+  // Seconds of witnessed heat that raise the wanted level by one star.
+  get escalation() {
+    return 20 + this.stars * 6;
+  }
+  get heatFraction() {
+    return this.stars >= MAX_STARS ? 0 : clamp(this.continuous / this.escalation, 0, 1);
   }
   get cruisers() {
     return this.units.filter((unit) => unit.patrol);
@@ -301,7 +326,7 @@ class Pursuit {
     return !!b && Math.abs(x - b.x) < (b.vertical ? 8 : 23) && Math.abs(y - b.y) < (b.vertical ? 23 : 8);
   }
   sweepByAir(dt, player, onFoot, height) {
-    if (this.stars < 5 || this.aircraftTaken) return false;
+    if (this.stars < AIR_STARS || this.aircraftTaken) return false;
     const center = this.lastSeen;
     const h = (this.helicopter ||= { x: center.x - 115, y: center.y - 75, angle: 0, z: 78, a: 0 });
     h.angle = (h.angle + dt * 0.82) % (2 * Math.PI);
@@ -373,9 +398,10 @@ class Pursuit {
   step(dt, player, movingFast, onFoot = false, height = 0) {
     if (!this.stars) return;
     let visible = this.sweepByAir(dt, player, onFoot, height),
-      canIntercept = false;
+      canIntercept = false,
+      alongside = 0;
     this.nearest = Infinity;
-    const range = (this.phase === 'search' ? 143 : 189) + this.stars * 6;
+    const range = (this.phase === 'search' ? 150 : 200) + this.stars * 10;
     for (const unit of this.units) {
       const observer = unit.officer || unit;
       const d = distance(observer, player);
@@ -386,13 +412,24 @@ class Pursuit {
       if (unit.seesPlayer) {
         visible = true;
         if (!height && (unit.officer ? d < (onFoot ? 13 : 17) : !onFoot && d < 33)) canIntercept = true;
+        if (!height && !onFoot && !unit.officer && d < 26) alongside++;
       }
     }
-    this.intercept = canIntercept && !movingFast ? this.intercept + dt : 0;
+    // Cruisers pinning a crawling car arrest it as surely as a stopped one: two of them, or one from three stars.
+    const pinned = alongside >= (this.stars >= 3 ? 1 : 2) && Math.abs(player.speed) < 55;
+    // The arrest bar drains instead of resetting, so repeated stops near a unit add up.
+    this.intercept =
+      canIntercept && (!movingFast || pinned)
+        ? this.intercept + dt
+        : Math.max(0, this.intercept - dt * 1.5);
     if (this.intercept >= ARREST_SECONDS) {
       this.clear();
       return 'caught';
     }
+    this.inSight = visible;
+    const sighting = position(
+      height && !world.allowed(player.x, player.y, 7) ? world.roadPoint(player).at : player,
+    );
     let event;
     if (visible) {
       if (
@@ -410,22 +447,28 @@ class Pursuit {
           unit.replan = 0;
         }
       }
-      this.lastSeen = position(
-        height && !world.allowed(player.x, player.y, 7) ? world.roadPoint(player).at : player,
-      );
+      this.lastSeen = sighting;
       this.lastSeenOnFoot = onFoot;
       this.unseen = 0;
       this.remaining = this.searchDuration;
-      if (this.stars < MAX_STARS) this.continuous += dt;
-      if (this.stars < MAX_STARS && this.continuous >= 28 + this.stars * 7) {
-        this.report(player, onFoot, this.lastSeen);
-        event = 'reinforced';
+      if (this.stars < MAX_STARS) {
+        this.continuous += dt;
+        if (this.continuous >= this.escalation) {
+          this.report(player, onFoot, this.lastSeen);
+          event = 'reinforced';
+        }
       }
     } else if (this.phase === 'chase') {
-      this.unseen = Math.min(0.85, this.unseen + dt);
-      if (this.unseen >= 0.85) {
+      // A car is easy to follow by radio; a runner who ducks out of sight slips away much sooner.
+      const track = onFoot ? Math.min(0.85, this.trackDuration) : this.trackDuration;
+      this.unseen = Math.min(track, this.unseen + dt);
+      if (this.unseen < track) {
+        if (!onFoot) {
+          this.lastSeen = sighting;
+          this.lastSeenOnFoot = false;
+        }
+      } else {
         this.phase = 'search';
-        this.continuous = 0;
         this.remaining = this.searchDuration;
         for (const unit of this.units) unit.replan = 0;
         event = 'search';
@@ -437,18 +480,36 @@ class Pursuit {
         return 'escaped';
       }
     }
+    const searching = this.phase === 'search';
+    // From three stars, cars aim where a fleeing car is heading and close in to ram it.
+    const ramming = !searching && this.stars >= 3 && !onFoot && !height;
+    let aim = this.lastSeen;
+    if (ramming && Number.isFinite(player.speed)) {
+      const lead = clamp(player.speed * 0.2, -10, 30),
+        ahead = { x: aim.x + Math.cos(player.a) * lead, y: aim.y + Math.sin(player.a) * lead };
+      if (world.allowed(ahead.x, ahead.y, 7) && world.clearSegment(aim, ahead, 7)) aim = ahead;
+    }
+    // The net widens around the last sighting as the search runs on.
+    const reach = 150 + (this.searchDuration - this.remaining) * 16;
+    let rammed = false;
     for (const unit of this.units) {
-      const searching = this.phase === 'search';
-      if (searching && !unit.sweep && distance(unit.officer || unit, this.lastSeen) < 25) {
-        // Sweep a nearby road from the last sighting, independently of the player's current position.
+      if (!searching && this.stars >= 2) this.flank(unit, player, dt);
+      const observer = unit.officer || unit;
+      if (
+        searching &&
+        (unit.sweep ? distance(observer, unit.sweep) < 12 : distance(observer, this.lastSeen) < 25)
+      ) {
+        // Sweep nearby roads from the last sighting, independently of the player's current position.
+        const previous = unit.sweep;
         const options = patrolEntries.filter((g) => {
           const d = distance(g, this.lastSeen);
-          return d > 48 && d < 152;
+          return d > 48 && d < reach && (!previous || distance(g, previous) > 60);
         });
-        if (options.length) unit.sweep = options[unit.slot % options.length];
+        unit.sweeps = (unit.sweeps || 0) + 1;
+        if (options.length) unit.sweep = options[(unit.slot * 5 + unit.sweeps * 11) % options.length];
         unit.replan = 0;
       }
-      const goal = unit.sweep || this.lastSeen;
+      const goal = unit.sweep || (unit.officer ? this.lastSeen : aim);
       if (unit.officer) {
         const officer = unit.officer;
         const closeToStoppedCar =
@@ -490,7 +551,13 @@ class Pursuit {
           continue;
         }
       }
-      moveUnit(unit, goal, dt, stopping ? 15 : searching ? 54 : 83 + this.stars * 8, searching ? 5 : 18);
+      moveUnit(
+        unit,
+        goal,
+        dt,
+        stopping ? 15 : searching ? 70 + this.stars * 5 : 108 + this.stars * 8,
+        searching ? 5 : ramming ? 10 : 18,
+      );
       for (let i = 0; i < unit.slot; i++) {
         const other = this.units[i];
         if (!other.onDuty) continue;
@@ -506,8 +573,38 @@ class Pursuit {
           unit.y = y;
         }
       }
+      if (!onFoot && !height && this.contact(unit, player, ramming, dt)) rammed = true;
     }
-    return event;
+    return event || (rammed ? 'rammed' : undefined);
+  }
+  // A cruiser can shove the suspect's car from three stars on, but never drives through it.
+  contact(unit, player, ramming, dt) {
+    unit.ramIn = Math.max(0, (unit.ramIn || 0) - dt);
+    const dx = unit.x - player.x,
+      dy = unit.y - player.y,
+      d = Math.hypot(dx, dy);
+    if (d >= 20) return false;
+    // Only an impact counts as a ram: a cruiser pacing alongside just holds its distance.
+    const closing =
+      ((Math.cos(unit.a) * unit.speed - Math.cos(player.a) * player.speed) * -dx +
+        (Math.sin(unit.a) * unit.speed - Math.sin(player.a) * player.speed) * -dy) /
+      (d || 1);
+    const shove = ramming && closing > 25 && !unit.ramIn;
+    if (shove) {
+      player.speed *= 0.6;
+      unit.speed *= 0.4;
+      unit.ramIn = 4;
+    }
+    // After contact the cruiser falls back a little, so a car that keeps its foot down can pull away.
+    if (closing > 0) unit.speed = Math.min(unit.speed, Math.abs(player.speed) * 0.85);
+    const k = d > 0.01 ? (20 - d) / d : 0,
+      x = unit.x + dx * k,
+      y = unit.y + dy * k;
+    if (world.allowed(x, y, 7)) {
+      unit.x = x;
+      unit.y = y;
+    }
+    return shove;
   }
   snapshot() {
     if (!this.stars) return null;
@@ -558,14 +655,14 @@ class Pursuit {
     this.remaining = Number.isFinite(value.remaining)
       ? bounded(value.remaining, this.searchDuration)
       : this.searchDuration;
-    this.unseen = bounded(value.unseen, 0.85);
-    this.continuous = bounded(value.continuous, 70);
+    this.unseen = bounded(value.unseen, this.trackDuration);
+    this.continuous = bounded(value.continuous, this.escalation);
     this.intercept = bounded(value.intercept, ARREST_SECONDS);
     if (this.stars >= 3 && validPoint(value.roadblock, 0))
       this.roadblock = { ...position(value.roadblock), vertical: value.roadblock.vertical === true };
     const h = value.helicopter;
-    this.aircraftTaken = this.stars === 5 && value.aircraftTaken === true;
-    if (this.stars === 5 && !this.aircraftTaken && h && [h.x, h.y, h.angle].every(Number.isFinite))
+    this.aircraftTaken = this.stars >= AIR_STARS && value.aircraftTaken === true;
+    if (this.stars >= AIR_STARS && !this.aircraftTaken && h && [h.x, h.y, h.angle].every(Number.isFinite))
       this.helicopter = {
         x: clamp(h.x, -250, world.width + 250),
         y: clamp(h.y, -250, world.height + 250),
@@ -626,4 +723,4 @@ class Pursuit {
   }
 }
 
-export { Pursuit, runTo as walkTo, moveUnit as driveTo, nearestBoardable };
+export { Pursuit, AIR_STARS, runTo as walkTo, moveUnit as driveTo, nearestBoardable };

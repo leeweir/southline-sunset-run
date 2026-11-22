@@ -31,7 +31,7 @@ const activities = {
     detail: '在落日唱片行起跑，穿过四道旗门冲向码头。',
     pay: 180,
   },
-  heat: { title: '高星追逐', icon: 'star', detail: '三星出动路障，五星加派空巡。甩开追兵即可结算。' },
+  heat: { title: '高星追逐', icon: 'star', detail: '三星出动路障，四星起加派空巡。甩开追兵即可结算。' },
   garage: {
     title: '海风旅馆车库',
     icon: 'upcar',
