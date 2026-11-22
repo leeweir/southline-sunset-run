@@ -69,8 +69,12 @@ function skySight(from, to, fromZ, toZ) {
 }
 function towards(from, to) {
   const dx = to.x - from.x,
-    dy = to.y - from.y;
-  const angle = Math.atan2(-0.53 * dx + 0.85 * dy, 0.85 * dx + 0.53 * dy);
+    dy = to.y - from.y,
+    g = world.ground;
+  const angle = Math.atan2(
+    g.screenYFromX * dx + g.screenYFromY * dy,
+    g.screenXFromX * dx + g.screenXFromY * dy,
+  );
   return ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'][(Math.round(angle / (Math.PI / 4)) + 8) % 8];
 }
 class Flight {

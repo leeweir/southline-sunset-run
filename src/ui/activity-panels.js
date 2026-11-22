@@ -68,7 +68,9 @@ export function activityBoard(sim, playing) {
     '<div class="heat-choice"><div>' +
     icon('star') +
     '<strong>高星追逐</strong></div><small>' +
-    (heatReady ? '五星可夺取低飞的警用直升机，甩开追兵有赏金' : '驾驶车辆并解除当前通缉后可挑战') +
+    (heatReady
+      ? '四星起出动直升机，下车等它低飞即可夺机；甩开追兵有赏金'
+      : '驾驶车辆并解除当前通缉后可挑战') +
     '</small><div class="heat-buttons">' +
     '<button data-do="start-heat-3" ' +
     (heatReady ? '' : 'disabled') +

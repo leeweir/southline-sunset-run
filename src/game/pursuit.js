@@ -395,6 +395,43 @@ class Pursuit {
       unit.replan = 0;
     }
   }
+  // A crime the police watch happen adds heat; a full bar raises the wanted level.
+  witness(seconds, player, onFoot = false) {
+    if (!this.stars || !this.inSight || this.stars >= MAX_STARS) return false;
+    this.continuous += seconds;
+    if (this.continuous < this.escalation) return false;
+    this.report(player, onFoot);
+    return true;
+  }
+  // A cruiser left far behind rejoins from a road ahead of the suspect, outside the frame.
+  flank(unit, player, dt) {
+    unit.flankIn = Math.max(0, (unit.flankIn || 0) - dt);
+    if (!unit.patrol || unit.id || !unit.onDuty || unit.officer || unit.seesPlayer || unit.flankIn) return;
+    if (distance(unit, player) < 520 || !offscreen(unit, player)) return;
+    unit.flankIn = 1;
+    let best = null,
+      bestCost = Infinity;
+    for (const gate of patrolEntries) {
+      const d = distance(player, gate);
+      if (d > 640 || !offscreen(gate, player)) continue;
+      let cost = d + Math.abs(wrap(Math.atan2(gate.y - player.y, gate.x - player.x) - player.a)) * 110;
+      for (const other of this.units)
+        if (other !== unit)
+          cost += Math.max(0, 120 - distance(other.onDuty ? other : other.officer, gate)) * 3;
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = gate;
+      }
+    }
+    if (!best) return;
+    Object.assign(unit, position(best), {
+      a: Math.atan2(player.y - best.y, player.x - best.x),
+      speed: 70,
+      chasePath: [],
+      replan: 0,
+      flankIn: 6,
+    });
+  }
   step(dt, player, movingFast, onFoot = false, height = 0) {
     if (!this.stars) return;
     let visible = this.sweepByAir(dt, player, onFoot, height),

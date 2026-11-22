@@ -625,7 +625,11 @@ class Drive {
         if (t === c || distance(t, c) > 18) continue;
         const dx = c.x - t.x,
           dy = c.y - t.y,
-          n = Math.hypot(dx, dy) || 1;
+          n = Math.hypot(dx, dy) || 1,
+          impact = c.speed,
+          // Only driving into a police vehicle counts; a cruiser ramming from behind does not.
+          struck =
+            t.onDuty && Math.abs(impact) > 40 && (Math.cos(c.a) * -dx + Math.sin(c.a) * -dy) * impact > 0;
         const pushX = c.x + (dx / n) * 5,
           pushY = c.y + (dy / n) * 5;
         if (world.allowed(pushX, pushY, 7)) {
@@ -635,7 +639,7 @@ class Drive {
         c.speed *= -0.28;
         this.cooldown = 1;
         this.emit('bump');
-        if (struckPolice && this.wanted.witness(6, c)) this.starAlert('撞击警车');
+        if (struck && this.wanted.witness(6, c)) this.starAlert('撞击警车');
         break;
       }
     this.trailClock += dt;
